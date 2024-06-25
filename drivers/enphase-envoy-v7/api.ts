@@ -18,6 +18,7 @@ export default class EnphaseEnvoyApi {
   private password: string;
 
   private accessToken: string | null = null;
+  private sessionId: string | null = null;
 
   constructor(
     address: string,
@@ -46,8 +47,8 @@ export default class EnphaseEnvoyApi {
     const url = `https://${this.address}/${path}`;
 
     const requestHeaders =
-      this.accessToken !== null
-        ? { Authorization: `Bearer ${this.accessToken}` }
+      this.sessionId !== null
+        ? { Cookie: `sessionId=${this.sessionId}` }
         : undefined;
 
     const response = await fetch(url, {
@@ -71,7 +72,7 @@ export default class EnphaseEnvoyApi {
 
       return this.fetchApiEndpoint(path, true);
     } else if (!response.ok) {
-      throw new Error("An unknown error occurred while fetching inverter data");
+      throw new Error("An unknown error occurred while fetching inverter data:" + response.status + " and bearer: " + this.accessToken + " and sessionId: " + this.sessionId);
     }
 
     return response;
@@ -120,17 +121,41 @@ export default class EnphaseEnvoyApi {
       }
     );
 
+
     if (tokenResponse.ok) {
       this.accessToken = await tokenResponse.text();
     } else {
       throw new Error("An error occurred while retrieving an access token");
     }
+
+    const checkJwtResponse = await fetch(
+      `https://${this.address}/auth/check_jwt`,
+      {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${this.accessToken}` },
+        agent: (parsedUrl: URL) => {
+          if (parsedUrl.protocol == "http:") {
+            return new http.Agent();
+          } else {
+            return new https.Agent({
+              rejectUnauthorized: false,
+            });
+          }
+        }
+      }
+    );
+
+    if (checkJwtResponse.ok) {
+      this.sessionId = await checkJwtResponse.headers.get("set-cookie")?.match(/sessionId=(.*?);/)?.[1];
+    } else {
+      throw new Error("An error occurred while retrieving an access token");
+    }
   }
 
-  async getProductionData(): Promise<ApiProduction> {
+  async getProductionData(): Promise<any> {
     return (
-      await this.fetchApiEndpoint("api/v1/production")
-    ).json() as Promise<ApiProduction>;
+      await this.fetchApiEndpoint("production.json")
+    ).json() as Promise<any>;
   }
 
   async getMeters(): Promise<ApiMeters> {

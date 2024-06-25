@@ -80,12 +80,27 @@ class EnphaseEnvoy extends Inverter {
   async checkProduction() {
     this.homey.log("Checking production");
 
+    // my installation seems fucked.
+    // it seems to be configured as metered, while my installation is not. And the metered API is not returning useful info
+    // current state based on the official version of this app is as followed:
+    // the non-metered API call shows 0.00 for all values at https://<ip>/api/v1/production
+    // the metered API calls show random numbers that are not seeming to make sense, at https://<ip>/ivp/meters/readings
+
+    // The (old?) inverter view atleast shows the correct wNow (production in Watt):
+    // https://<ip>/production.json?details=1
+    // but this call doesnt work with the Bearer token but needs the sessionId cookie
+    // thats why i forked and fixed it specifically for (my?) borked installation
+
+    // also see Tweakers for an overview of API endpoints:
+    // https://gathering.tweakers.net/forum/list_messages/2075922/0
+
     if (this.enphaseApi) {
       try {
         // Determine whether Envoy is metered
         // If it is, use meter data, otherwise get production data from inverter reports
         const meterData = await this.enphaseApi.getMeters();
-        const isMetered =
+        this.homey.log(meterData)
+        let isMetered =
           meterData.length &&
           meterData
             .map((meter) => meter.measurementType)
@@ -95,18 +110,36 @@ class EnphaseEnvoy extends Inverter {
               )
             );
 
+        //override isMetered to false
+        isMetered = false;
+
         // Get production data from inverter reports
         const productionData = await this.enphaseApi.getProductionData();
-        const currentEnergy = productionData.wattHoursToday / 1000;
 
+        this.homey.log(productionData);
+
+        // let currentEnergy = productionData.wattHoursToday / 1000;
+        let currentEnergy = 0;
         await this.setCapabilityValue("meter_power", currentEnergy);
         this.homey.log(`Current production energy is ${currentEnergy}kWh`);
 
         if (!isMetered) {
-          const currentPower = productionData.wattsNow;
-
+          let currentPower = 0;
+          if (JSON) {
+            currentPower = productionData.production[0].wNow;
+          }
           await this.setCapabilityValue("measure_power", currentPower);
           this.homey.log(`Current production power is ${currentPower}W`);
+
+          // Set consumption and grid power to 0 if Envoy is not metered
+          await this.setCapabilityValue(
+            "measure_power.consumption",
+            0
+          );
+          await this.setCapabilityValue(
+            "measure_power.grid",
+            0
+          );
         }
 
         if (isMetered) {
