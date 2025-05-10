@@ -3,7 +3,7 @@
   "version": "5.0.0",
   "main": "app.ts",
   "engines": {
-    "node": "16"
+    "node": "20"
   },
   "scripts": {
     "homey-validate": "homey app validate --level verified",
